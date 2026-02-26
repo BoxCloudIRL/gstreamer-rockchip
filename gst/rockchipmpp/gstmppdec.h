@@ -90,6 +90,8 @@ struct _GstMppDec
 
   GstVideoCodecFrame *last_frame;
 
+  GQueue *ready_frames;
+
   MppCodingType mpp_type;
   MppCtx mpp_ctx;
   MppApi *mpi;

@@ -106,41 +106,13 @@ enum
   PROP_LAST,
 };
 
-static const MppFrameFormat gst_mpp_enc_formats[] = {
-  MPP_FMT_YUV420SP,
-  MPP_FMT_YUV420P,
-  MPP_FMT_YUV422_YUYV,
-  MPP_FMT_YUV422_UYVY,
-  MPP_FMT_YUV444SP,
-  MPP_FMT_YUV444P,
-  MPP_FMT_RGB565LE,
-  MPP_FMT_BGR565LE,
-  MPP_FMT_RGB888,
-  MPP_FMT_BGR888,
-  MPP_FMT_ARGB8888,
-  MPP_FMT_ABGR8888,
-  MPP_FMT_RGBA8888,
-  MPP_FMT_BGRA8888,
-};
-
-static gboolean
-gst_mpp_enc_format_supported (MppFrameFormat format)
-{
-  guint i;
-
-  for (i = 0; i < ARRAY_SIZE (gst_mpp_enc_formats); i++) {
-    if (format == gst_mpp_enc_formats[i])
-      return TRUE;
-  }
-
-  return FALSE;
-}
-
 gboolean
 gst_mpp_enc_supported (MppCodingType mpp_type)
 {
   MppCtx mpp_ctx;
   MppApi *mpi;
+
+  mpp_set_log_level (MPP_LOG_WARN);
 
   if (mpp_create (&mpp_ctx, &mpi))
     return FALSE;
@@ -157,11 +129,14 @@ gst_mpp_enc_supported (MppCodingType mpp_type)
 gboolean
 gst_mpp_enc_video_info_align (GstVideoInfo * info)
 {
-  gint vstride = 0;
+  gint vstride;
 
-  /* Allow skipping vstride aligning for RKVENC */
-  if (g_getenv ("GST_MPP_ENC_UNALIGNED_VSTRIDE"))
+  /* Vstride alignment is off by default to avoid UV plane misalignment */
+  if (g_getenv ("GST_MPP_ENC_ALIGNED_VSTRIDE")) {
+    vstride = 0;
+  } else {
     vstride = GST_MPP_VIDEO_INFO_VSTRIDE (info);
+  }
 
   return gst_mpp_video_info_align (info, 0, vstride);
 }
@@ -659,7 +634,7 @@ gst_mpp_enc_set_format (GstVideoEncoder * encoder, GstVideoCodecState * state)
    * NOTE: Not checking the strides here, since they might not be the actual
    * ones (could be overrided by video-meta)
    */
-  if (self->rotation || !gst_mpp_enc_format_supported (format) ||
+  if (self->rotation || format == MPP_FMT_BUTT ||
       width != GST_VIDEO_INFO_WIDTH (info) ||
       height != GST_VIDEO_INFO_HEIGHT (info)) {
     if (!gst_mpp_use_rga ()) {
@@ -778,7 +753,7 @@ gst_mpp_enc_propose_allocation (GstVideoEncoder * encoder, GstQuery * query)
 
   gst_buffer_pool_set_config (pool, config);
 
-  gst_query_add_allocation_pool (query, pool, size, 0, 0);
+  gst_query_add_allocation_pool (query, pool, size, 2, 0);
   gst_query_add_allocation_param (query, self->allocator, NULL);
 
   gst_object_unref (pool);
@@ -1354,20 +1329,20 @@ no_rga:
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property (gobject_class, PROP_BPS,
-      g_param_spec_uint ("bps", "Target BPS",
-          "Target BPS (0 = auto calculate)",
+      g_param_spec_uint ("bitrate", "Target bitrate",
+          "Target bitrate in bps (0 = auto calculate)",
           0, G_MAXINT, DEFAULT_PROP_BPS,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property (gobject_class, PROP_BPS_MIN,
-      g_param_spec_uint ("bps-min", "Min BPS",
-          "Min BPS (0 = auto calculate)",
+      g_param_spec_uint ("bitrate-min", "Min bitrate",
+          "Min bitrate in bps (0 = auto calculate)",
           0, G_MAXINT, DEFAULT_PROP_BPS_MIN,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property (gobject_class, PROP_BPS_MAX,
-      g_param_spec_uint ("bps-max", "Max BPS",
-          "Max BPS (0 = auto calculate)",
+      g_param_spec_uint ("bitrate-max", "Max bitrate",
+          "Max bitrate in bps (0 = auto calculate)",
           0, G_MAXINT, DEFAULT_PROP_BPS_MAX,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 

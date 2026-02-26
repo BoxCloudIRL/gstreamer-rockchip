@@ -285,7 +285,8 @@ gst_mpp_allocator_new (void)
 
   static gint num_mpp_alloc = 0;
 
-  if (mpp_buffer_group_get_internal (&group, MPP_BUFFER_TYPE_DRM))
+  if (mpp_buffer_group_get_internal (&group,
+          MPP_BUFFER_TYPE_DRM | MPP_BUFFER_FLAGS_DMA32))
     return FALSE;
 
   if (mpp_buffer_group_get_external (&ext_group, MPP_BUFFER_TYPE_DRM)) {

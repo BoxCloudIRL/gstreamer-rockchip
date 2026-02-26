@@ -237,7 +237,17 @@ gst_mpp_dec_reset (GstVideoDecoder * decoder, gboolean drain, gboolean final)
   self->task_ret = GST_FLOW_OK;
   self->decoded_frames = 0;
 
-  /* Clear pending frames */
+  /* Drain the delayed output queue */
+  if (self->ready_frames) {
+    GstVideoCodecFrame *f;
+    while ((f = g_queue_pop_head (self->ready_frames)) != NULL)
+      gst_video_decoder_release_frame (decoder, f);
+
+    g_queue_free (self->ready_frames);
+    self->ready_frames = NULL;
+  }
+
+  /* Clear pending input frames */
   frames = gst_video_decoder_get_frames (decoder);
   for (; frames; frames = frames->next) {
     GstVideoCodecFrame *f = frames->data;
@@ -578,7 +588,10 @@ gst_mpp_dec_apply_info_change (GstVideoDecoder * decoder, MppFrame mframe)
   dst_height = GST_VIDEO_INFO_HEIGHT (info);
 
   if (self->rotation || dst_format != src_format ||
-      dst_width != width || dst_height != height) {
+      dst_width != width || dst_height != height ||
+      self->crop_x != 0 || self->crop_y != 0 ||
+      (self->crop_w != 0 && (gint) self->crop_w != width) ||
+      (self->crop_h != 0 && (gint) self->crop_h != height)) {
     if (afbc || rfbc || offset_x || offset_y) {
       GST_ERROR_OBJECT (self, "unable to convert with FBC or offsets (%d, %d)",
           offset_x, offset_y);
@@ -827,7 +840,10 @@ gst_mpp_dec_rga_convert (GstVideoDecoder * decoder, MppFrame mframe,
   mem = gst_allocator_alloc (self->allocator, GST_VIDEO_INFO_SIZE (info), NULL);
   g_return_val_if_fail (mem, FALSE);
 
-  if (!gst_mpp_rga_convert_from_mpp_frame (mframe, mem, info, self->rotation)) {
+  GstVideoCropMeta *crop = gst_buffer_get_video_crop_meta (buffer);
+
+  if (!gst_mpp_rga_convert_from_mpp_frame (mframe, mem, info,
+          self->rotation, crop)) {
     GST_WARNING_OBJECT (self, "failed to convert");
     gst_memory_unref (mem);
     ret = FALSE;
@@ -835,6 +851,9 @@ gst_mpp_dec_rga_convert (GstVideoDecoder * decoder, MppFrame mframe,
     gst_buffer_replace_all_memory (buffer, mem);
     ret = TRUE;
   }
+
+  if (crop && ret)
+    gst_buffer_remove_meta (buffer, (GstMeta *) crop);
 
   GST_VIDEO_DECODER_STREAM_LOCK (decoder);
   return ret;
@@ -1046,7 +1065,31 @@ gst_mpp_dec_loop (GstVideoDecoder * decoder)
   GST_DEBUG_OBJECT (self, "finish frame ts=%" GST_TIME_FORMAT,
       GST_TIME_ARGS (frame->pts));
 
-  self->task_ret = gst_video_decoder_finish_frame (decoder, frame);
+  /*
+   * The RK3588 decoder may reference the most recently returned buffer
+   * when decoding the next frame. Passing it downstream as writable lets
+   * a sink or converter modify the memory, producing visual artifacts.
+   *
+   * When RGA conversion is active we already output a copy, so there is
+   * no need for extra buffering. Otherwise we delay output by one frame
+   * so the decoder is done with the previous buffer before we hand it out.
+   */
+  if (self->convert) {
+    self->task_ret = gst_video_decoder_finish_frame (decoder, frame);
+  } else {
+    if (!self->ready_frames) {
+      self->ready_frames = g_queue_new ();
+      if (!self->ready_frames)
+        goto error;
+    }
+    g_queue_push_tail (self->ready_frames, frame);
+
+    if (g_queue_get_length (self->ready_frames) > 1) {
+      GstVideoCodecFrame *queued = g_queue_pop_head (self->ready_frames);
+      if (queued)
+        self->task_ret = gst_video_decoder_finish_frame (decoder, queued);
+    }
+  }
 
 out:
   if (mframe) {

@@ -31,6 +31,7 @@
 #endif
 
 #include <rockchip/rk_mpi.h>
+#include <rockchip/mpp_log.h>
 
 G_BEGIN_DECLS;
 
@@ -78,7 +79,9 @@ G_BEGIN_DECLS;
 #ifdef HAVE_RGA
 #define GST_RGA_FORMATS \
     "NV12, NV21, I420, YV12, NV16, NV61, " \
-    "BGR16, RGB, BGR, RGBA, BGRA, RGBx, BGRx"
+    "YUY2, YVYU, UYVY, VYUY, " \
+    "RGB16, BGR16, RGB, BGR, " \
+    "ARGB, ABGR, RGBA, BGRA, xRGB, xBGR, RGBx, BGRx"
 #endif
 
 gboolean gst_mpp_use_rga ();
@@ -94,7 +97,8 @@ gboolean gst_mpp_rga_convert (GstBuffer * inbuf, GstVideoInfo * src_vinfo,
     GstMemory * out_mem, GstVideoInfo * dst_vinfo, gint rotation);
 
 gboolean gst_mpp_rga_convert_from_mpp_frame (MppFrame * mframe,
-    GstMemory * out_mem, GstVideoInfo * dst_vinfo, gint rotation);
+    GstMemory * out_mem, GstVideoInfo * dst_vinfo, gint rotation,
+    GstVideoCropMeta * crop);
 #endif
 
 /* Apply new format and size without reinit the video info */

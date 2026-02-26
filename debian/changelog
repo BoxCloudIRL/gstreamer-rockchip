@@ -1,3 +1,21 @@
+boxcloud-gstreamer1.0-rockchip (20260219-1) stable; urgency=medium
+
+  * BoxCloud fork of gstreamer-rockchip based on JeffyCN upstream
+  * Force DMA allocations within low 4GB for RGA2 compatibility
+  * Populate all RGA format mappings for complete format support
+  * Route RGB16/BGR16 through RGA to work around MPP LE_MASK bug
+  * Add RGA error handling for unknown format conversions
+  * Implement functional crop-rectangle via RGA with crop meta cleanup
+  * Invert vstride alignment default to prevent UV plane misalignment
+  * Remove redundant encoder format table, use unified gst_mpp_formats
+  * Request minimum 2 encoder buffers to prevent capture starvation
+  * Rename bps properties to bitrate for clarity
+  * Reduce MPP log verbosity to warning level
+  * Delay decoder output by one frame to prevent reference corruption
+  * Fix unneeded RGA convert when crop dimensions are unconfigured
+
+ -- BoxCloud project <boxcloudproject@gmail.com>  Wed, 19 Feb 2026 12:00:00 +0000
+
 gstreamer1.0-rockchip (1.14-4) stable; urgency=medium
 
   * mppdec: Sort functions

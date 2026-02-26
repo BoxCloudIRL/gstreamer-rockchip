@@ -81,20 +81,21 @@ struct gst_mpp_format gst_mpp_formats[] = {
   GST_MPP_FORMAT (NV61, YUV422SP_VU, YCrCb_422_SP, 1, 1),
   GST_MPP_FORMAT (NV24, YUV444SP, UNKNOWN, 1, 1),
   GST_MPP_FORMAT (Y444, YUV444P, UNKNOWN, 1, 1),
-  GST_MPP_FORMAT (YUY2, YUV422_YUYV, UNKNOWN, 2, 1),
-  GST_MPP_FORMAT (YVYU, YUV422_YVYU, UNKNOWN, 2, 1),
-  GST_MPP_FORMAT (UYVY, YUV422_UYVY, UNKNOWN, 2, 1),
-  GST_MPP_FORMAT (VYUY, YUV422_VYUY, UNKNOWN, 2, 1),
-  GST_MPP_FORMAT (RGB16, RGB565LE, UNKNOWN, 2, 0),
-  GST_MPP_FORMAT (BGR16, BGR565LE, RGB_565, 2, 0),
+  GST_MPP_FORMAT (YUY2, YUV422_YUYV, YUYV_422, 2, 1),
+  GST_MPP_FORMAT (YVYU, YUV422_YVYU, YVYU_422, 2, 1),
+  GST_MPP_FORMAT (UYVY, YUV422_UYVY, UYVY_422, 2, 1),
+  GST_MPP_FORMAT (VYUY, YUV422_VYUY, VYUY_422, 2, 1),
+  /* MPP encoder mishandles RGB565/BGR565 (LE_MASK ignored), route via RGA */
+  GST_MPP_FORMAT (RGB16, BUTT, BGR_565, 2, 0),
+  GST_MPP_FORMAT (BGR16, BUTT, RGB_565, 2, 0),
   GST_MPP_FORMAT (RGB, RGB888, RGB_888, 3, 0),
   GST_MPP_FORMAT (BGR, BGR888, BGR_888, 3, 0),
-  GST_MPP_FORMAT (ARGB, ARGB8888, UNKNOWN, 4, 0),
-  GST_MPP_FORMAT (ABGR, ABGR8888, UNKNOWN, 4, 0),
+  GST_MPP_FORMAT (ARGB, ARGB8888, ARGB_8888, 4, 0),
+  GST_MPP_FORMAT (ABGR, ABGR8888, ABGR_8888, 4, 0),
   GST_MPP_FORMAT (RGBA, RGBA8888, RGBA_8888, 4, 0),
   GST_MPP_FORMAT (BGRA, BGRA8888, BGRA_8888, 4, 0),
-  GST_MPP_FORMAT (xRGB, ARGB8888, UNKNOWN, 4, 0),
-  GST_MPP_FORMAT (xBGR, ABGR8888, UNKNOWN, 4, 0),
+  GST_MPP_FORMAT (xRGB, ARGB8888, XRGB_8888, 4, 0),
+  GST_MPP_FORMAT (xBGR, ABGR8888, XBGR_8888, 4, 0),
   GST_MPP_FORMAT (RGBx, RGBA8888, RGBX_8888, 4, 0),
   GST_MPP_FORMAT (BGRx, BGRA8888, BGRX_8888, 4, 0),
 };
@@ -205,7 +206,12 @@ gst_mpp_rga_info_from_mpp_frame (rga_info_t * info, MppFrame mframe)
   guint height = mpp_frame_get_height (mframe);
   guint hstride = mpp_frame_get_hor_stride (mframe);
   guint vstride = mpp_frame_get_ver_stride (mframe);
+
   RgaSURF_FORMAT rga_format = gst_mpp_mpp_format_to_rga_format (mpp_format);
+  if (rga_format == RK_FORMAT_UNKNOWN) {
+    GST_ERROR ("no RGA equivalent for MPP format %d", mpp_format);
+    return FALSE;
+  }
 
   struct gst_mpp_format *format = GST_MPP_GET_FORMAT (mpp, mpp_format);
   if (format)
@@ -227,7 +233,12 @@ gst_mpp_rga_info_from_video_info (rga_info_t * info, GstVideoInfo * vinfo)
   guint height = GST_VIDEO_INFO_HEIGHT (vinfo);
   guint hstride = gst_mpp_get_pixel_stride (vinfo);
   guint vstride = GST_MPP_VIDEO_INFO_VSTRIDE (vinfo);
+
   RgaSURF_FORMAT rga_format = gst_mpp_gst_format_to_rga_format (format);
+  if (rga_format == RK_FORMAT_UNKNOWN) {
+    GST_ERROR ("no RGA equivalent for GStreamer format %d", format);
+    return FALSE;
+  }
 
   return gst_mpp_set_rga_info (info, rga_format, width, height,
       hstride, vstride);
@@ -324,13 +335,21 @@ gst_mpp_rga_convert (GstBuffer * inbuf, GstVideoInfo * src_vinfo,
 
 gboolean
 gst_mpp_rga_convert_from_mpp_frame (MppFrame * mframe,
-    GstMemory * out_mem, GstVideoInfo * dst_vinfo, gint rotation)
+    GstMemory * out_mem, GstVideoInfo * dst_vinfo, gint rotation,
+    GstVideoCropMeta * crop)
 {
   rga_info_t src_info = { 0, };
   rga_info_t dst_info = { 0, };
 
   if (!gst_mpp_rga_info_from_mpp_frame (&src_info, mframe))
     return FALSE;
+
+  if (crop) {
+    src_info.rect.xoffset = crop->x;
+    src_info.rect.yoffset = crop->y;
+    src_info.rect.width = crop->width;
+    src_info.rect.height = crop->height;
+  }
 
   if (!gst_mpp_rga_info_from_video_info (&dst_info, dst_vinfo))
     return FALSE;
